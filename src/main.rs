@@ -7,8 +7,7 @@ use axum::{
     Router,
 };
 use clap::Parser;
-use serde::Serialize;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     net::SocketAddr,
     path::{Path as StdPath, PathBuf},
@@ -17,7 +16,7 @@ use std::{
 };
 use tokio::fs;
 use chrono::{DateTime, Local};
-use tracing::{info, error};
+use tracing::{error, info};
 use tracing_subscriber;
 use urlencoding::encode;
 
@@ -89,6 +88,7 @@ struct RenameResponse {
     status: String,
 }
 
+// 创建文件夹和重命名所需的请求体结构体
 #[derive(Deserialize)]
 struct CreateFolderPayload {
     folder_name: String,
@@ -106,6 +106,7 @@ async fn main() {
 
     // 解析命令行参数
     let args = Cli::parse();
+
     // 获取并规范化根目录路径
     let root_dir = PathBuf::from(args.directory.clone());
     let canonical_root_dir = match root_dir.canonicalize() {
@@ -165,6 +166,7 @@ async fn show_files_root(
     show_files_handler("".to_string(), state).await
 }
 
+// 根上传处理器
 async fn upload_file_root(
     Extension(state): Extension<Arc<AppState>>,
     multipart: Multipart,
@@ -172,6 +174,7 @@ async fn upload_file_root(
     upload_file_handler("".to_string(), state, multipart).await
 }
 
+// 根删除处理器
 async fn delete_file_root(
     Path(filename): Path<String>,
     Extension(state): Extension<Arc<AppState>>,
@@ -179,6 +182,7 @@ async fn delete_file_root(
     delete_file_handler(filename, state).await
 }
 
+// 根重命名处理器
 async fn rename_file_root(
     Path(old_name): Path<String>,
     Extension(state): Extension<Arc<AppState>>,
@@ -195,6 +199,7 @@ async fn show_files(
     show_files_handler(path, state).await
 }
 
+// show_files_handler 实现
 async fn show_files_handler(
     path: String,
     state: Arc<AppState>,
@@ -232,24 +237,25 @@ async fn show_files_handler(
 
     let mut file_rows = String::new();
 
-if !path.is_empty() {
-    let path_buf = PathBuf::from(&path);
-    let parent_path_str = path_buf
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or("");
-    let encoded_parent = encode(parent_path_str).into_owned();
-    file_rows.push_str(&format!(
-        "<tr>
-            <td><a href=\"/{0}\">..</a></td>
-            <td>-</td>
-            <td>-</td>
-            <td>是</td>
-            <td></td>
-        </tr>",
-        encoded_parent
-    ));
-}
+    // 添加返回上一级目录的链接
+    if !path.is_empty() {
+        let path_buf = PathBuf::from(&path);
+        let parent_path_str = path_buf
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("");
+        let encoded_parent = encode(parent_path_str).into_owned();
+        file_rows.push_str(&format!(
+            "<tr>
+                <td><a href=\"/{0}\">..</a></td>
+                <td>-</td>
+                <td>-</td>
+                <td>是</td>
+                <td></td>
+            </tr>",
+            encoded_parent
+        ));
+    }
 
     // 生成文件和目录的HTML行
     for (name, size, modified, is_dir) in files {
@@ -616,7 +622,7 @@ if !path.is_empty() {
             </body>
         </html>",
         file_rows,
-        &current_path
+        if path.is_empty() { "" } else { &format!("/{path}") }
     );
 
     Ok(Html(html))
@@ -628,6 +634,8 @@ async fn create_folder(
     Extension(state): Extension<Arc<AppState>>,
     Json(payload): Json<CreateFolderPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
+    info!("创建文件夹请求: 路径='{}', 文件夹名称='{}'", path, payload.folder_name);
+
     let safe_path = match state.get_safe_path(&path) {
         Ok(p) => p,
         Err(e) => return Err(e),
@@ -668,6 +676,8 @@ async fn rename_file_handler(
     new_name: String,
     state: Arc<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
+    info!("重命名请求: 源路径='{}', 新名称='{}'", old_path, new_name);
+
     // 验证新名称，防止路径遍历攻击
     if new_name.contains("..") || new_name.contains('/') || new_name.contains('\\') {
         error!("无效的新名称: {}", new_name);
@@ -846,16 +856,7 @@ async fn download_file(
         .unwrap())
 }
 
-// 辅助函数：拼接路径
-fn path_join(current: &str, name: &str) -> String {
-    if current == "/" {
-        format!("{}/", name)
-    } else {
-        format!("{}/{}", current.trim_end_matches('/'), name)
-    }
-}
-
-// 格式化文件大小
+// 辅助函数：格式化文件大小
 fn format_size(size: u64) -> String {
     let kb = 1024u64;
     let mb = kb * 1024;
