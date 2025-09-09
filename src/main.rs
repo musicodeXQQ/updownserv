@@ -622,7 +622,7 @@ async fn show_files_handler(
             </body>
         </html>",
         file_rows,
-        if path.is_empty() { "" } else { &format!("/{path}") }
+        if path.is_empty() { String::new() } else { format!("/{path}") }
     );
 
     Ok(Html(html))
